@@ -14,6 +14,8 @@ this file is *why, what to skip, and how to make it feel smooth and snappy*.
 | **Strict color grammar** — ~90% grayscale; indigo on data/actions; magenta once; green/amber/red = status only, never decoration | Doubly justified: reads expensive (design) AND color is a safety channel in clinical UIs (a decorative red can be misread as an alert) |
 | **5–9 core elements per view, progressive disclosure** | Your 5 stat cards already sit at the bottom of this range. Detail on demand (hover, drill-in), not everything at once |
 | **Overview-first, drill down** | Cards → plots → All Records table is literally the evidence-backed pattern. Every future tab repeats this shape: summary strip on top, dense detail below |
+| **Three-second rule** (Fuselab) | The acceptance test for the Overview tab: can a clinician glance at it and answer "is the trial working, and who's off-track?" within three seconds? If a headline answer needs scrolling, reading a legend, or hovering, the hierarchy failed. Rates up top, biggest type on the answer, everything else quieter |
+| **Consolidation — answer on ONE screen** (Ron Design Lab EHR+ lesson) | Doctors in that study found it "faster to print records than interpret them digitally" because data was scattered across screens. The dashboard's whole value is cards + plots + table on one page; drill-down = state on the same page (hover, select, filter), never navigation away. A patient clicked in the swimmer plot should highlight in the table, not open a new route |
 | **Density is audience-dependent** | Overview = minimal; plots + DataGrid = allowed to be dense. Both pull from the same tokens; don't "minimalize" the analyst views |
 | **Denominators everywhere** | "DCR 62% · n=34/55". A rate without its denominator is the #1 credibility miss in clinical dashboards |
 | **Data-freshness stamp** | "Data as of {date}" near the header. Near-zero cost, disproportionate trust gain |
@@ -32,6 +34,7 @@ this file is *why, what to skip, and how to make it feel smooth and snappy*.
 | **3D waterfall plots** | The oncology literature itself warns: z-axis is hard to read, legend burden up, insight marginal. Flat + sorted wins |
 | **Real-time indicators / live-updating widgets** | Only honest if the data is actually live. Trial data is batch-loaded; a fake "live" pulse erodes the trust the freshness stamp builds |
 | **Mobile-first layout** | Clinicians review response data on desktop/laptop. Make it *responsive* (below), but don't design for a phone first and strip density |
+| **Glassmorphism / frosted-glass widgets** | THE 2026 inspiration-feed aesthetic (dark glassmorphism, frosted biometric widgets over gradient backgrounds) — and wrong for this project. Blur + translucency reduce legibility, which is the one thing clinical data can't trade. Verdict: never on surfaces holding data; at most a frosted modal backdrop (`backdrop-filter` on the overlay, solid white modal on top) if we want a taste of the trend on non-data chrome |
 | **Dark mode (for now)** | A *sequencing* call, not a permanent one. Dark mode = a second value for every token (dark surface ramp, re-derived tints, re-checked contrast, second MUI palette, re-tested charts) — doubling the QA surface of a system that hasn't shipped v1. Because everything reads from tokens, adding it later is one `.dark { --bg: …; }` block + a MUI palette swap, not a rewrite. Ship light; add dark when a user actually asks |
 
 ### APPEND (missing from the clinical research — the "modern feel" layer)
@@ -137,13 +140,51 @@ Jank = things moving that shouldn't. The rules:
 5. **Keyboard affordances**: `/` focuses search; `Esc` closes anything floating.
 6. **Transition tokens on the sidebar active-pill** so the `--brand-tint` highlight slides between nav items (`--dur-base`, `--ease-out`) instead of teleporting — one detail, reads extremely modern, costs ~10 lines.
 
----
+### 2.6 Chart skin — what makes a plot read "modern" (goes in `chartTheme.js`)
+
+Default Plotly/Recharts styling is the loudest "unstyled" tell after scrollbars.
+The modern chart look decomposes into five removals and two additions:
+
+**Remove** (the defaults that read dated):
+1. Chart border / axis box — no frame around the plot area; the card IS the frame.
+2. Heavy gridlines — horizontal only, 1px `--border`, no vertical gridlines at all.
+3. Axis tick marks — labels alone, in `--text-subtle` at 12px, are enough.
+4. Legend boxes with borders — plain inline swatch + label, or better, direct labeling on the data.
+5. Default tooltip — replace with the token-styled `ChartTooltip` (§2.5.4).
+
+**Add:**
+1. **Rounded bar caps** on the waterfall + swimmer bars (2–3px radius on the outer end only) — the single cheapest "2026" signal on a bar chart.
+2. **Gradient fill under line series** (spider plot patient lines when highlighted): the series color at ~15% opacity fading to transparent at the baseline. Only on the ONE highlighted line — a gradient under every gray-crowd line is noise.
+
+What stays clinical and does NOT get the treatment: RECIST reference lines remain
+dashed `--border-strong` hairlines (they're thresholds, not decoration), and bars
+never get gradients — a gradient-filled waterfall bar makes the value ambiguous.
 
 ## Part 3 — The merge: one sentence each
 
 - **Clinical** gives the *what*: strict color semantics, denominators, freshness, overview→drill, plots-as-siblings, accessibility as table stakes.
 - **Modern** gives the *feel*: <100ms local interactions, short decelerating motion spent only where it means something, all five interaction states, zero layout shift.
 - They don't trade off — both converge on **restraint with intention**: the clinical side because attention and color are safety channels; the modern side because restraint is what reads expensive.
+
+## Part 4 — The pure-CSS distillation: ten moves that make a frontend read "good"
+
+Everything above, compressed to what it means in raw CSS. Ordered by impact.
+Use as the review checklist when eyeballing any screen.
+
+1. **Background/card contrast, not shadows.** Tinted-gray page (`--bg`), pure-white cards, 1px hairline border. The ~2% brightness gap makes cards float. Card drop-shadows = the #1 amateur tell; the one shadow (`--shadow-pop`) is reserved for things that genuinely float (menus, modals, toasts).
+2. **One accent, everything else grayscale.** ~90% grays; indigo only where it means something (primary action, active nav, data). Restraint is what reads expensive.
+3. **Type hierarchy from weight + gray, not size.** One sans-serif (Inter); hierarchy via 600-vs-400 and the four text-gray steps, not ten font sizes. Big numbers: `-0.02em` tracking + `tabular-nums`. Never pure #000 on pure #fff.
+4. **A 4px spacing scale you never break.** Generous between groups (24px), tight within them (label 4–6px from its value). Proximity does more grouping work than any border.
+5. **One radius scale everywhere.** 6 / 10 / 14 / 20px. Mixed radii read chaotic; a scale reads like one hand.
+6. **All five interaction states on everything interactive.** Hover, pressed, focus-visible, disabled, selected (§2.3). Users judge polish by the states designers forget; focus rings are a11y and polish in one move.
+7. **Motion: few, fast, decelerating.** Three durations, one ease-out, transform/opacity only. Nothing loops, bounces, or replays on refetch (§2.2).
+8. **Zero layout shift.** Skeletons at exact final size, fixed chart/table heights, `scrollbar-gutter: stable`, explicit media dimensions (§2.4). Invisible when right — which is why it reads "smooth."
+9. **Style the library defaults.** Scrollbars, chart tooltips, focus outlines, Material shadows — defaults break the design language louder than anything you built. Cheap to fix, high yield (§2.5).
+10. **Tokens make it enforceable.** Every value above lives once in `:root`. Consistency isn't discipline, it's architecture — you can't drift when there's only one `--border` to use.
+
+> One sentence: one accent on a calm gray-scale, hairlines instead of shadows,
+> weight-driven type on a 4px grid, all five states, fast decelerating motion,
+> nothing ever shifts — all enforced through tokens rather than memory.
 
 ### Build order (updated)
 

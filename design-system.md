@@ -31,7 +31,7 @@ src/
 │   │   ├── EmptyState.jsx    # designed empty state (icon + sentence + action)
 │   │   └── ErrorState.jsx    # inline error + retry
 │   ├── charts/               # the three plots share their skin here
-│   │   ├── chartTheme.js     # ONE place: gridline color, font, tooltip style, category→color map
+│   │   ├── chartTheme.js     # ONE place: gridline color, font, tooltip style, category→color map + chart skin (principles §2.6)
 │   │   ├── WaterfallPlot.jsx
 │   │   ├── SpiderPlot.jsx
 │   │   ├── SwimmerPlot.jsx
