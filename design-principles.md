@@ -1,0 +1,157 @@
+# Hummingbird Dashboard — Design Principles (Clinical × Modern)
+
+Companion to `design-system.md` (tokens + theme + StatCard). That file is *what to build*;
+this file is *why, what to skip, and how to make it feel smooth and snappy*.
+
+---
+
+## Part 1 — Verdict on the research: keep / throw / append
+
+### KEEP (earns its place in this project)
+
+| Principle | Why it stays |
+|---|---|
+| **Strict color grammar** — ~90% grayscale; indigo on data/actions; magenta once; green/amber/red = status only, never decoration | Doubly justified: reads expensive (design) AND color is a safety channel in clinical UIs (a decorative red can be misread as an alert) |
+| **5–9 core elements per view, progressive disclosure** | Your 5 stat cards already sit at the bottom of this range. Detail on demand (hover, drill-in), not everything at once |
+| **Overview-first, drill down** | Cards → plots → All Records table is literally the evidence-backed pattern. Every future tab repeats this shape: summary strip on top, dense detail below |
+| **Density is audience-dependent** | Overview = minimal; plots + DataGrid = allowed to be dense. Both pull from the same tokens; don't "minimalize" the analyst views |
+| **Denominators everywhere** | "DCR 62% · n=34/55". A rate without its denominator is the #1 credibility miss in clinical dashboards |
+| **Data-freshness stamp** | "Data as of {date}" near the header. Near-zero cost, disproportionate trust gain |
+| **Never color-alone encoding** | ~8% of men are red-green colorblind — the exact pair clinical status uses. Pill + label, ▲/▼ + number, marker shape + color |
+| **Plots as siblings** | Waterfall / spider / swimmer share: card wrapper, gridlines in `--border`, one legend component, identical color-per-response-category. Consistency beats any single-chart improvement |
+| **RECIST reference lines** | −30% / +20% dashed hairlines in `--border-strong` on waterfall + spider |
+| **Gray-crowd spider plot** | All lines light gray; highlight the notable (or hovered) patient in indigo. The 90%-grayscale rule applied to data — the single move that separates it from a default Plotly chart |
+| **Information order = clinical question order** | "Is it working, for whom, who's still on it?" → rates → waterfall (depth) → swimmer (duration) |
+
+### THROW AWAY (in the research, not right for this project)
+
+| Trend / advice | Why it's out |
+|---|---|
+| **AI-agent / conversational dashboard trend** | Enterprise trend-piece filler. An internal clinical dashboard needs legible data, not a chatbot |
+| **Per-user dashboard customization** | Valid for hospital-wide platforms with 10 user roles; for a focused trial dashboard it's YAGNI — it adds settings surface and fragments the one carefully designed layout |
+| **3D waterfall plots** | The oncology literature itself warns: z-axis is hard to read, legend burden up, insight marginal. Flat + sorted wins |
+| **Real-time indicators / live-updating widgets** | Only honest if the data is actually live. Trial data is batch-loaded; a fake "live" pulse erodes the trust the freshness stamp builds |
+| **Mobile-first layout** | Clinicians review response data on desktop/laptop. Make it *responsive* (below), but don't design for a phone first and strip density |
+| **Dark mode (for now)** | Doubles every token decision and QA surface. The light clinical palette IS the brand look; revisit only if users ask |
+
+### APPEND (missing from the clinical research — the "modern feel" layer)
+
+The clinical literature is silent on *feel*. Everything below is the append.
+
+---
+
+## Part 2 — The modern feel: smooth, snappy, sleek
+
+"Snappy" is engineerable. It decomposes into four things: **latency, motion, interaction
+states, and layout stability.** Each has concrete numbers and tokens.
+
+### 2.1 Latency budgets (what "snappy" actually is)
+
+Perceived-speed thresholds (Nielsen's numbers, still the standard):
+
+- **< 100 ms** → feels instant. Everything local must land here: tab switch, hover, filter toggle, sort.
+- **100–300 ms** → perceptible lag. Acceptable only for server round-trips.
+- **> 300 ms** → needs feedback (skeleton, progress), or it feels broken.
+
+Rules that follow:
+
+1. **Never block the UI on data.** Render the shell + skeletons immediately; let numbers arrive. (StatCard already has the skeleton state.)
+2. **Optimistic UI for local interactions.** Filter click updates the UI instantly; fetch reconciles after. Don't spinner a checkbox.
+3. **Stale-while-revalidate.** Show last-known data with the freshness stamp while refetching (TanStack Query default behavior — use it). An instant "slightly old + timestamped" beats a spinner every time, *especially* in clinical context where the stamp makes staleness honest.
+4. **Tab switches are instant.** Keep tab panels mounted (hide, don't unmount) or cache their queries so returning to a tab never re-loads.
+5. **Virtualize the big table.** MUI DataGrid virtualizes rows by default — don't defeat it with `autoHeight` on long lists.
+
+### 2.2 Motion system (smooth ≠ more animation)
+
+The counterintuitive finding from every polished product: **sleek = fewer, faster,
+more purposeful animations.** Slow/springy animation reads consumer-toy; snappy
+= short durations + decelerating easing. Add to `tokens.css`:
+
+```css
+:root {
+  /* Durations — err short. If an animation feels "nice", it's ~50ms too long. */
+  --dur-fast:   120ms;  /* hovers, color/border changes, toggles */
+  --dur-base:   200ms;  /* panel/tab transitions, card lift, collapse */
+  --dur-slow:   400ms;  /* one-time entrances only (page load, chart draw) */
+
+  /* Easing — decelerate. Things ARRIVE fast and settle; never linear, never bouncy. */
+  --ease-out:     cubic-bezier(0.16, 1, 0.3, 1);   /* the "expensive" ease */
+  --ease-in-out:  cubic-bezier(0.65, 0, 0.35, 1);  /* moving between two on-screen states */
+}
+```
+
+The motion budget — where animation is ALLOWED:
+
+| Moment | Treatment |
+|---|---|
+| Hover states | `--dur-fast`, color/border only (cheap to render) |
+| Clickable-card lift | `translateY(-2px)` + `--shadow-pop`, `--dur-base` — affordance, so clickable elements only |
+| Tab/panel switch | Fade + 4–8px slide, `--dur-base` `--ease-out`. Never a full slide-across |
+| Rate-bar / chart draw | Once, on first mount, `--dur-slow`. Never re-animate on tab return or refetch |
+| Sidebar collapse | Width transition `--dur-base`; icons stay fixed, labels fade |
+| Dropdowns/menus | Scale from 0.97 + fade, `--dur-fast` |
+
+Where animation is BANNED: layout reflow (nothing pushes other content while
+animating — transform/opacity only, they're GPU-composited and stay 60fps),
+looping/pulsing attention-grabbers (alarm-fatigue in a clinical UI), number
+count-ups on every refetch (once on load at most), skeleton shimmer slower
+than 1.5s, and anything that replays when data merely revalidates.
+
+Implementation: **CSS transitions for 90% of this.** Reach for Framer Motion only
+for enter/exit of mounted/unmounted elements (modals, toasts). Every animation
+respects the `prefers-reduced-motion` kill-switch already in `tokens.css`.
+
+### 2.3 Interaction states (where "sleek" actually lives)
+
+Users judge polish by the states designers forget. Every interactive element
+gets all five — this is the checklist:
+
+| State | Treatment (from tokens) |
+|---|---|
+| **Hover** | Fill: `--surface-alt`; or border: `--border-strong`. Subtle — visible, not loud |
+| **Active/pressed** | `scale(0.98)` or a shade darker, `--dur-fast` — the "click felt" signal |
+| **Focus-visible** | 2px ring `--brand` at 40%, offset 2px. Keyboard-only (`:focus-visible`), on EVERYTHING interactive |
+| **Disabled** | `--text-subtle` + `cursor-not-allowed`; never just lower opacity on white (fails contrast) |
+| **Selected** | `--brand-tint` fill + `--brand` text/border (nav items, table rows, filter chips) |
+
+Plus the three data states every view needs designed, not defaulted:
+
+- **Loading** → skeletons matching final layout exactly (no shift).
+- **Empty** → a designed empty state: one muted icon, one sentence, one action. Never a blank white card.
+- **Error** → inline, human, with a retry — not a toast that vanishes.
+
+### 2.4 Layout stability (the invisible half of "smooth")
+
+Jank = things moving that shouldn't. The rules:
+
+1. **Reserve space for everything async.** Skeletons at exact final dimensions; fixed heights for chart containers (`aspect-ratio` or explicit height) so plots don't reflow the page when they render.
+2. **`tabular-nums` everywhere numbers change** (already in tokens) — refetches don't wiggle the layout.
+3. **Scrollbar-safe**: `scrollbar-gutter: stable` on the main scroll container so content doesn't jump 15px when a scrollbar appears.
+4. **Images/illustrations get explicit width/height** (or aspect-ratio) — zero CLS.
+5. **Responsive without breakpoint whiplash**: the stat grid's 2→3→5 column skip-4 pattern; sidebar collapses to icon-rail at `lg`, drawer below `md`; plots shrink gracefully (min-width + horizontal scroll inside their card, never squashed axes).
+
+### 2.5 Small sleek details (cheap, high-yield, in priority order)
+
+1. **`scroll-behavior: smooth` + sticky table header** in All Records — the header staying put while rows scroll reads instantly professional.
+2. **Custom scrollbar** (thin, `--border-strong` thumb, transparent track) inside cards/tables. Default chrome scrollbars are the loudest "unstyled" tell on Windows.
+3. **Toasts bottom-right, 4s, one at a time**, `--shadow-pop` — the only floating shadow in the app besides menus.
+4. **Chart tooltips restyled to the token system** (white card, `--border` hairline, `--shadow-pop`, `tabular-nums`). Default Plotly/Recharts tooltips break the design language harder than anything else on the page.
+5. **Keyboard affordances**: `/` focuses search; `Esc` closes anything floating.
+6. **Transition tokens on the sidebar active-pill** so the `--brand-tint` highlight slides between nav items (`--dur-base`, `--ease-out`) instead of teleporting — one detail, reads extremely modern, costs ~10 lines.
+
+---
+
+## Part 3 — The merge: one sentence each
+
+- **Clinical** gives the *what*: strict color semantics, denominators, freshness, overview→drill, plots-as-siblings, accessibility as table stakes.
+- **Modern** gives the *feel*: <100ms local interactions, short decelerating motion spent only where it means something, all five interaction states, zero layout shift.
+- They don't trade off — both converge on **restraint with intention**: the clinical side because attention and color are safety channels; the modern side because restraint is what reads expensive.
+
+### Build order (updated)
+
+1. Tokens incl. motion tokens (`design-system.md` + §2.2) — done on paper
+2. StatCards with n= denominators + freshness stamp in header
+3. Interaction-state pass over existing components (§2.3 checklist)
+4. Plot unification: tokens for gridlines/legends/tooltips, gray-crowd spider, RECIST lines
+5. Layout stability pass (§2.4) + sticky header + scrollbars
+6. Sidebar polish (sliding active pill) + the one magenta hero moment — last, as always
