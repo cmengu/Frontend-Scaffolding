@@ -1,13 +1,51 @@
 # Hummingbird Clinical Dashboard — Design System
 
-Brand-coded token layer + flattened MUI theme + polished StatCard.
+Brand-coded token layer + flattened MUI theme + full component/data-layer code.
 Stack: **Vite · React (JSX) · Tailwind v3 · MUI (kept for DataGrid/forms)**.
+Companion file: `design-principles.md` (the why: clinical × modern principles, keep/throw verdicts, motion budget).
 
 Brand colors extracted from hummingbirdbioscience.com:
 - **Indigo `#333674`** — workhorse accent. Allowed on: primary buttons, active nav, links, primary chart series, focus rings, selected rows, progress bars.
 - **Magenta `#AF3791`** — the rare pop. Allowed on: ONE hero moment, one emphasized metric, second chart series. Nothing else.
 - **Azure `#2D64A5`** — info / third chart series.
 - Everything else is grayscale. Color only where it means something.
+
+---
+
+## 0. File scaffolding
+
+```
+src/
+├── styles/
+│   └── tokens.css            # ALL tokens: color + radius + spacing + motion
+├── theme.js                  # MUI theme (reads tokens)
+├── lib/
+│   └── api.js                # fetch functions — components never call fetch directly
+├── hooks/
+│   └── useStats.js           # data-fetching hooks (loading/error/success state machine)
+├── components/
+│   ├── ui/                   # design-system primitives — dumb, NO data fetching
+│   │   ├── StatCard.jsx
+│   │   ├── StatusPill.jsx
+│   │   ├── Button.jsx
+│   │   ├── EmptyState.jsx    # designed empty state (icon + sentence + action)
+│   │   └── ErrorState.jsx    # inline error + retry
+│   ├── charts/               # the three plots share their skin here
+│   │   ├── chartTheme.js     # ONE place: gridline color, font, tooltip style, category→color map
+│   │   ├── WaterfallPlot.jsx
+│   │   ├── SpiderPlot.jsx
+│   │   ├── SwimmerPlot.jsx
+│   │   └── ChartTooltip.jsx  # shared token-styled tooltip
+│   └── layout/
+│       ├── Sidebar.jsx
+│       └── PageHeader.jsx    # title + "data as of" stamp lives here
+└── pages/
+    └── DashboardPage.jsx     # composes hooks + ui + charts; owns layout only
+```
+
+Two load-bearing rules:
+1. **`components/ui/` never fetches data.** Primitives take props — that's what makes them reusable on any page with any data source.
+2. **`charts/chartTheme.js` is "plots as siblings" as a file** — one category→color map imported by all three plots, so "PR is always the same green" is enforced by the import, not by discipline.
 
 ---
 
@@ -67,14 +105,26 @@ MUI reads it via `var()` in style overrides.
   --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
   --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
 
-  /* ── ONE shadow, floating things only (menus/modals), NEVER cards ── */
+  /* ── Motion — the app has exactly three speeds ────────────
+     Err short: if an animation feels "nice", it's ~50ms too long. */
+  --dur-fast:   120ms;  /* hovers, color/border changes, toggles */
+  --dur-base:   200ms;  /* panel/tab transitions, card lift, sidebar collapse */
+  --dur-slow:   400ms;  /* one-time entrances only (page load, chart/bar draw) */
+
+  /* Easing — decelerate. Things ARRIVE fast and settle.
+     Never linear, never bouncy. */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);   /* the "expensive" ease */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);  /* between two on-screen states */
+
+  /* ── ONE shadow, floating things only (menus/modals/toasts), NEVER cards ── */
   --shadow-pop: 0 1px 2px rgba(28, 30, 51, .04), 0 4px 12px rgba(28, 30, 51, .08);
 }
 
-/* Base — put in the same file or index.css after the :root block */
+/* Base — same file or index.css after the :root block */
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
 }
 body {
   background: var(--bg);
@@ -85,6 +135,9 @@ body {
    "amateur" signal in a data UI */
 .tabular { font-variant-numeric: tabular-nums; }
 
+/* Content doesn't jump 15px when a scrollbar appears */
+main { scrollbar-gutter: stable; }
+
 /* Respect users who turn animation off (clinical = accessibility matters) */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -93,6 +146,10 @@ body {
   }
 }
 ```
+
+> **Dark mode note:** deliberately skipped for v1 (see principles file). Because
+> everything reads from tokens, dark mode later = one `.dark { --bg: …; }` override
+> block + a second MUI palette — not a rewrite. The architecture already paid for it.
 
 ---
 
@@ -124,14 +181,25 @@ module.exports = {
       },
       boxShadow: { pop: "var(--shadow-pop)" },
       fontFamily: { sans: ["Inter", "system-ui", "sans-serif"] },
+      /* Motion tokens → real utility names: duration-fast/base/slow, ease-out-token */
+      transitionDuration: {
+        fast: "var(--dur-fast)",
+        base: "var(--dur-base)",
+        slow: "var(--dur-slow)",
+      },
+      transitionTimingFunction: {
+        "out-token": "var(--ease-out)",
+        "in-out-token": "var(--ease-in-out)",
+      },
     },
   },
   plugins: [],
 };
 ```
 
-Now `bg-surface`, `border-border`, `text-strong`, `text-muted`, `bg-brand`,
-`rounded-card`, `shadow-pop` all resolve to the same tokens MUI uses.
+Now `bg-surface`, `border-border`, `text-strong`, `bg-brand`, `rounded-card`,
+`shadow-pop`, `duration-base`, `ease-out-token` all resolve to the same tokens
+MUI uses. Retune the whole app's motion by editing one CSS line.
 
 ---
 
@@ -217,29 +285,44 @@ import "./styles/tokens.css";
 AND Tailwind classes on the same element — they fight over specificity and CSS
 injection order. Tokens are shared; styling authority per element is not.
 
+**DataGrid virtualization gotcha:** virtualization needs a fixed-height viewport
+to know which rows to render. `autoHeight` grows the grid to fit ALL rows → no
+viewport → every row becomes real DOM → jank that scales with data.
+
+```jsx
+// ❌ defeats virtualization — fine at 20 rows, dies at 1,000
+<DataGrid autoHeight rows={patients} columns={cols} />
+
+// ✅ fixed container height — grid virtualizes internally.
+//    Bonus: the card occupies 560px in ALL states (skeleton/3 rows/3,000 rows)
+//    → zero layout shift.
+<div style={{ height: 560 }}>
+  <DataGrid rows={patients} columns={cols} />
+</div>
+```
+
 ---
 
-## 4. `src/components/ui/StatCard.jsx` — refined
+## 4. `src/components/ui/StatCard.jsx`
 
-Replaces the old `Box > Card > CardBody > Typography` nest with one component.
-Five cards, one shell: counts are pure grayscale; rates get a thin indigo bar
-(color only on data). What each refinement is doing is annotated below the code.
+One shell for all five cards: counts are pure grayscale; rates get a thin indigo
+bar (color only on data). Durations now come from the motion tokens.
 
 ```jsx
 import { useEffect, useState } from "react";
 
 /**
- * StatCard — clinical stat tile.
+ * StatCard — clinical stat tile. Dumb component: no fetching, props only.
  *
  * props:
  *  label    string            "Total Patients"
  *  value    string | number   128 | "62%"
  *  icon     Lucide component  optional
  *  percent  number            0–100 → renders the indigo bar (rate cards)
- *  hint     string            small context line, e.g. "of 128 enrolled"
+ *  hint     string            small context line, e.g. "n=34/55"
  *  hero     boolean           ONE card may set this → magenta bar + tinted chip
- *  loading  boolean           skeleton state
- *  onClick  function          optional → card becomes a real button
+ *  loading  boolean           skeleton state (owned by the page, not the card)
+ *  onClick  function          optional → card becomes a real <button>
  */
 export function StatCard({
   label, value, icon: Icon, percent, hint,
@@ -264,6 +347,7 @@ export function StatCard({
   const Tag = onClick ? "button" : "div";
 
   if (loading) {
+    // Skeleton matches final layout dimensions exactly → no shift when data lands
     return (
       <div className={`rounded-card border border-border bg-surface p-5 ${className}`}>
         <div className="mb-4 h-9 w-9 animate-pulse rounded-md bg-surface-alt" />
@@ -278,8 +362,9 @@ export function StatCard({
       onClick={onClick}
       className={[
         "group flex flex-col rounded-card border border-border bg-surface p-5 text-left",
-        "transition-all duration-200 ease-out",
+        "transition-all duration-base ease-out-token",
         onClick
+          // Motion = affordance: lift + shadow ONLY when clickable
           ? "cursor-pointer hover:-translate-y-0.5 hover:border-border-strong hover:shadow-pop " +
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2"
           : "hover:border-border-strong",
@@ -289,12 +374,13 @@ export function StatCard({
       {Icon && (
         <span
           className={`mb-4 inline-flex h-9 w-9 items-center justify-center rounded-md ${chip}
-                      transition-colors duration-200 group-hover:text-strong`}
+                      transition-colors duration-fast group-hover:text-strong`}
         >
           <Icon size={18} strokeWidth={2} aria-hidden />
         </span>
       )}
 
+      {/* Big numerals need slight negative tracking or they look loose */}
       <span className="tabular text-[28px] font-semibold leading-none tracking-[-0.02em] text-strong">
         {value}
       </span>
@@ -313,7 +399,7 @@ export function StatCard({
           aria-label={label}
         >
           <div
-            className={`h-full rounded-full ${barColor} transition-[width] duration-700 ease-out`}
+            className={`h-full rounded-full ${barColor} transition-[width] duration-slow ease-out-token`}
             style={{ width: `${barWidth}%` }}
           />
         </div>
@@ -327,43 +413,207 @@ export function StatCard({
 }
 ```
 
-### Usage — your five cards
+---
+
+## 5. The data layer — loading / empty / error as a state machine
+
+The pattern: one fetch produces a small state machine (`useState` under the hood),
+and the JSX renders one branch per state. Split of responsibilities:
+
+> **The hook owns WHEN** (the state machine) · **the page owns WHICH** (the branch)
+> · **the primitives own HOW IT LOOKS** (skeleton/empty/error skins).
+
+### 5.1 `src/hooks/useStats.js`
 
 ```jsx
-import { Users, Activity, CheckCircle2, Gauge, Target } from "lucide-react";
-import { StatCard } from "./components/ui/StatCard";
+import { useState, useEffect, useCallback } from "react";
+import { fetchStats } from "../lib/api";
 
-const stats = [
-  { label: "Total Patients",   value: 128,   icon: Users },
-  { label: "Currently Active", value: 47,    icon: Activity,     hint: "of 128 enrolled" },
-  { label: "Ever Had PR+",     value: 34,    icon: CheckCircle2, hint: "≥ partial response" },
-  { label: "Overall DCR",      value: "62%", icon: Gauge,        percent: 62, hint: "disease control rate" },
-  { label: "Overall ORR",      value: "27%", icon: Target,       percent: 27, hint: "objective response rate" },
-];
+export function useStats() {
+  // ONE status string, not separate isLoading/isError booleans:
+  // two booleans allow the impossible state `loading && error`.
+  // One string = always exactly one state. This IS the state machine.
+  const [status, setStatus] = useState("loading"); // 'loading' | 'error' | 'success'
+  const [data, setData] = useState(null);
 
-<div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-  {stats.map((s) => <StatCard key={s.label} {...s} />)}
-</div>
+  // useCallback memoizes `load` so the effect below doesn't re-fire every
+  // render (an inline function is a NEW function each render → infinite loop).
+  const load = useCallback(async () => {
+    setStatus("loading");            // retry() also flips UI back to skeletons
+    try {
+      const result = await fetchStats();   // the await = the hundreds-of-ms gap
+      setData(result);
+      setStatus("success");
+    } catch {
+      setStatus("error");
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);    // run once on mount
+
+  return { status, data, retry: load };
+}
 ```
 
-### What each refinement is doing (the little details)
+Why the shell renders immediately (mechanically): the component function runs
+**synchronously** and returns JSX first — with `status === "loading"` — and only
+*then* does the effect fire the fetch. React literally cannot block on it. The
+only decision you own is what the loading branch returns: the REAL layout with
+skeletons in the data slots, never a blank page + spinner.
+
+**`empty` is NOT a status.** Empty = successful fetch, zero rows — it's *derived*
+(`status === "success" && data.total.n === 0`), never stored. Derive what you
+can, store only what you must — this kills more React bugs than any other rule.
+
+> Scaling note: when you have many endpoints, TanStack Query replaces this hook's
+> internals (caching, stale-while-revalidate, dedup, refetch-on-focus) and returns
+> the same `status`/`data` shape — components stay identical. Learn it this way
+> first; swap the engine later.
+
+### 5.2 `src/components/ui/ErrorState.jsx` — inline, human, with a retry
+
+```jsx
+export function ErrorState({ message, onRetry }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-card border border-border bg-surface p-10 text-center">
+      <p className="text-[14px] text-muted">{message}</p>
+      <button
+        onClick={onRetry}
+        className="rounded-md bg-brand px-4 py-2 text-[13px] font-semibold text-white
+                   transition-colors duration-fast hover:bg-brand-hover
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+```
+
+### 5.3 `src/components/ui/EmptyState.jsx` — never a blank white card
+
+```jsx
+export function EmptyState({ icon: Icon, title, hint }) {
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-card border border-border bg-surface p-10 text-center">
+      {Icon && <Icon size={28} strokeWidth={1.5} className="text-subtle" aria-hidden />}
+      <p className="text-[14px] font-medium text-body">{title}</p>
+      {hint && <p className="text-[13px] text-subtle">{hint}</p>}
+    </div>
+  );
+}
+```
+
+Both use the same card shell (`rounded-card border-border bg-surface`) as
+everything else — even the error screen belongs to the family.
+
+### 5.4 `src/pages/DashboardPage.jsx` — composing it all
+
+```jsx
+import { Users, Activity, CheckCircle2, Gauge, Target, FolderSearch } from "lucide-react";
+import { useStats } from "../hooks/useStats";
+import { StatCard } from "../components/ui/StatCard";
+import { ErrorState } from "../components/ui/ErrorState";
+import { EmptyState } from "../components/ui/EmptyState";
+
+// Card SHAPE is config, not state — lives outside the component, created once.
+// Adding a 6th card = one line. Same array drives skeleton grid AND loaded grid,
+// which is what guarantees zero layout shift by construction.
+const CARD_DEFS = [
+  { key: "total",  label: "Total Patients",   icon: Users },
+  { key: "active", label: "Currently Active", icon: Activity },
+  { key: "pr",     label: "Ever Had PR+",     icon: CheckCircle2 },
+  { key: "dcr",    label: "Overall DCR",      icon: Gauge,  isRate: true },
+  { key: "orr",    label: "Overall ORR",      icon: Target, isRate: true },
+];
+
+export function DashboardPage() {
+  const { status, data, retry } = useStats();
+
+  const isEmpty = status === "success" && data.total.n === 0;   // derived, not stored
+
+  return (
+    <div className="space-y-6 p-6">
+      {/* SHELL — renders in EVERY state, no conditions. User sees the page
+          frame at t=0; data fills in rather than "arrives with a shift". */}
+      <header className="flex items-baseline justify-between">
+        <h1 className="text-xl font-semibold text-strong">Trial Overview</h1>
+        {data?.asOf && (
+          <span className="text-[12px] text-subtle">Data as of {data.asOf}</span>
+        )}
+      </header>
+
+      {/* THE BRANCH — one state, one render.
+          Order: error first (must win), then empty (only meaningful post-
+          success), then loading+success SHARING one branch — same grid, same
+          five StatCards, only the `loading` prop flips. */}
+      {status === "error" ? (
+        <ErrorState message="Couldn't load trial data." onRetry={retry} />
+      ) : isEmpty ? (
+        <EmptyState
+          icon={FolderSearch}
+          title="No patients enrolled yet"
+          hint="Stats will appear once the first patient is registered."
+        />
+      ) : (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+          {CARD_DEFS.map((def) => {
+            const stat = data?.[def.key];    // undefined while loading — safe,
+            return (                          // skeleton branch never reads it
+              <StatCard
+                key={def.key}
+                label={def.label}
+                icon={def.icon}
+                loading={status === "loading"}
+                value={def.isRate ? `${stat?.pct}%` : stat?.n}
+                percent={def.isRate ? stat?.pct : undefined}
+                hint={stat?.hint}             // e.g. "n=34/55" from the API
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+Expected API shape (`lib/api.js` → `fetchStats()`):
+
+```js
+{
+  asOf: "28 Jun 2026",
+  total:  { n: 128 },
+  active: { n: 47,  hint: "of 128 enrolled" },
+  pr:     { n: 34,  hint: "≥ partial response" },
+  dcr:    { pct: 62, hint: "n=34/55 · disease control rate" },
+  orr:    { pct: 27, hint: "n=15/55 · objective response rate" },
+}
+```
+
+---
+
+## 6. Design details recap (what each refinement is doing)
 
 | Detail | Why it reads "sleek" |
 |---|---|
-| `tracking-[-0.02em]` on the number | Big numerals need slight negative letter-spacing or they look loose; every polished dashboard does this |
-| `tabular-nums` | Digits are equal-width → values don't jitter or misalign across the row |
-| Bar animates 0→value on mount, 700ms ease-out | The one moment of motion; draws the eye to the two rate cards exactly once |
-| `hover:-translate-y-0.5` + `shadow-pop` **only when clickable** | Motion = affordance. Static cards get a border-darken only; lift implies "press me", so it's reserved for real buttons |
+| `tracking-[-0.02em]` on the number | Big numerals need slight negative letter-spacing or they look loose |
+| `tabular-nums` | Digits equal-width → values don't jitter or misalign across the row |
+| Bar animates 0→value on mount, `duration-slow` | The one moment of motion; never re-animates on tab return/refetch |
+| Lift + `shadow-pop` **only when clickable** | Motion = affordance; static cards get border-darken only |
 | `focus-visible:ring-brand/40` | Keyboard focus ring in brand indigo — a11y and polish in one move |
-| Icon chip: neutral gray, brightens to `text-strong` on hover | Icons aid scanning but never carry per-card color — that was the "random colors" problem |
-| Skeleton `loading` state | Matches exact layout dimensions → no layout shift when data arrives |
-| `role="progressbar"` + aria values | Screen readers announce "Overall DCR, 62%" — clinical tools get audited for this |
-| `prefers-reduced-motion` kill-switch (in tokens.css) | Animations collapse to instant for users who opt out |
-| `Tag = button` when `onClick` | A clickable div is an a11y bug; a real `<button>` gets keyboard + screen-reader behavior for free |
-| Grid `2 → 3 → 5` columns | 5 identical cards wrap awkwardly at 4-wide; skipping 4 keeps rows balanced at every breakpoint |
+| Icon chip: neutral gray, brightens on hover | Icons aid scanning but never carry per-card color |
+| Skeleton `loading` state at exact dimensions | No layout shift when data arrives |
+| `role="progressbar"` + aria values | Screen reader announces "Overall DCR, 62%" — clinical tools get audited |
+| `prefers-reduced-motion` kill-switch | Animations collapse to instant for users who opt out |
+| `Tag = button` when `onClick` | A clickable div is an a11y bug; a real `<button>` gets keyboard/SR free |
+| Grid `2 → 3 → 5` columns (skip 4) | 5 cards at 4-wide leaves a lonely orphan on row two |
+| One `status` string, not booleans | Impossible states are unrepresentable; empty is derived, never stored |
+| Fixed heights on DataGrid + charts | Virtualization works AND nothing reflows when data renders |
 
 ### Rules recap
 
 1. All five cards share one grayscale shell — variety comes from what the metric *is* (count vs rate), not decoration.
-2. Indigo appears only on the rate bars. Magenta only if you promote ONE card with `hero` (e.g. the primary endpoint) — never more than one.
-3. Green/amber/red are reserved for actual status (e.g. a future ▲/▼ delta badge vs last timepoint), never card decoration.
+2. Indigo appears only on the rate bars. Magenta only if you promote ONE card with `hero` — never more than one.
+3. Green/amber/red are reserved for actual status, never card decoration.
+4. `components/ui/` never fetches; pages own state; hooks own the machine.

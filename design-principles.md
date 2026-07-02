@@ -32,7 +32,7 @@ this file is *why, what to skip, and how to make it feel smooth and snappy*.
 | **3D waterfall plots** | The oncology literature itself warns: z-axis is hard to read, legend burden up, insight marginal. Flat + sorted wins |
 | **Real-time indicators / live-updating widgets** | Only honest if the data is actually live. Trial data is batch-loaded; a fake "live" pulse erodes the trust the freshness stamp builds |
 | **Mobile-first layout** | Clinicians review response data on desktop/laptop. Make it *responsive* (below), but don't design for a phone first and strip density |
-| **Dark mode (for now)** | Doubles every token decision and QA surface. The light clinical palette IS the brand look; revisit only if users ask |
+| **Dark mode (for now)** | A *sequencing* call, not a permanent one. Dark mode = a second value for every token (dark surface ramp, re-derived tints, re-checked contrast, second MUI palette, re-tested charts) — doubling the QA surface of a system that hasn't shipped v1. Because everything reads from tokens, adding it later is one `.dark { --bg: …; }` block + a MUI palette swap, not a rewrite. Ship light; add dark when a user actually asks |
 
 ### APPEND (missing from the clinical research — the "modern feel" layer)
 
@@ -59,26 +59,24 @@ Rules that follow:
 2. **Optimistic UI for local interactions.** Filter click updates the UI instantly; fetch reconciles after. Don't spinner a checkbox.
 3. **Stale-while-revalidate.** Show last-known data with the freshness stamp while refetching (TanStack Query default behavior — use it). An instant "slightly old + timestamped" beats a spinner every time, *especially* in clinical context where the stamp makes staleness honest.
 4. **Tab switches are instant.** Keep tab panels mounted (hide, don't unmount) or cache their queries so returning to a tab never re-loads.
-5. **Virtualize the big table.** MUI DataGrid virtualizes rows by default — don't defeat it with `autoHeight` on long lists.
+5. **Virtualize the big table.** MUI DataGrid virtualizes rows by default — don't defeat it with `autoHeight` on long lists. (Why: virtualization needs a fixed-height viewport to know which rows to render; `autoHeight` renders ALL rows as real DOM. Code fix in `design-system.md` §3.)
+
+> The code for §2.1's data-state pattern (the `useStats` hook, `ErrorState`,
+> `EmptyState`, and the page-level branch) now lives in `design-system.md` §5.
 
 ### 2.2 Motion system (smooth ≠ more animation)
 
 The counterintuitive finding from every polished product: **sleek = fewer, faster,
 more purposeful animations.** Slow/springy animation reads consumer-toy; snappy
-= short durations + decelerating easing. Add to `tokens.css`:
+= short durations + decelerating easing.
 
-```css
-:root {
-  /* Durations — err short. If an animation feels "nice", it's ~50ms too long. */
-  --dur-fast:   120ms;  /* hovers, color/border changes, toggles */
-  --dur-base:   200ms;  /* panel/tab transitions, card lift, collapse */
-  --dur-slow:   400ms;  /* one-time entrances only (page load, chart draw) */
-
-  /* Easing — decelerate. Things ARRIVE fast and settle; never linear, never bouncy. */
-  --ease-out:     cubic-bezier(0.16, 1, 0.3, 1);   /* the "expensive" ease */
-  --ease-in-out:  cubic-bezier(0.65, 0, 0.35, 1);  /* moving between two on-screen states */
-}
-```
+Motion tokens (`--dur-fast/base/slow`, `--ease-out`, `--ease-in-out`) are now IN
+`tokens.css` — see `design-system.md` §1 — and mapped to Tailwind utilities
+(`duration-fast/base/slow`, `ease-out-token`) in §2. How they work: a CSS variable
+holds any value including a time, so `transition: width var(--dur-base) var(--ease-out)`
+works anywhere, and the Tailwind mapping gives them utility names. The payoff:
+**the app has exactly three speeds** — all motion feels designed by one hand, and
+retuning the whole app = editing one line.
 
 The motion budget — where animation is ALLOWED:
 
@@ -149,9 +147,10 @@ Jank = things moving that shouldn't. The rules:
 
 ### Build order (updated)
 
-1. Tokens incl. motion tokens (`design-system.md` + §2.2) — done on paper
-2. StatCards with n= denominators + freshness stamp in header
-3. Interaction-state pass over existing components (§2.3 checklist)
-4. Plot unification: tokens for gridlines/legends/tooltips, gray-crowd spider, RECIST lines
-5. Layout stability pass (§2.4) + sticky header + scrollbars
-6. Sidebar polish (sliding active pill) + the one magenta hero moment — last, as always
+1. Tokens incl. motion tokens (`design-system.md` §1–2) — done on paper
+2. Data layer: `useStats` hook + Error/Empty states + DashboardPage branch (`design-system.md` §5)
+3. StatCards with n= denominators + freshness stamp in header
+4. Interaction-state pass over existing components (§2.3 checklist)
+5. Plot unification: tokens for gridlines/legends/tooltips, gray-crowd spider, RECIST lines
+6. Layout stability pass (§2.4) + sticky header + fixed DataGrid height + scrollbars
+7. Sidebar polish (sliding active pill) + the one magenta hero moment — last, as always
