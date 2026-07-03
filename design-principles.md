@@ -160,6 +160,81 @@ What stays clinical and does NOT get the treatment: RECIST reference lines remai
 dashed `--border-strong` hairlines (they're thresholds, not decoration), and bars
 never get gradients — a gradient-filled waterfall bar makes the value ambiguous.
 
+### 2.7 Sidebar — the numbers and the rules (`Sidebar.jsx`)
+
+The sidebar is an *orientation* device: it answers "where am I" at a glance.
+Research-backed spec (NN/g + consensus dimensions):
+
+**Dimensions**
+- Expanded: **240–260px**. Collapsed icon rail: **56–72px**.
+- Item height: **40–44px** (touch-target floor). Icons: **20px**.
+- Group labels: 11–12px uppercase, letter-spaced, `--text-subtle`, with 16–24px
+  extra space above — the gap does as much grouping work as the label.
+
+**Structure**
+- **5–7 primary items max** (we need ~4–5 — comfortably inside). Beyond that,
+  scanning slows and hierarchy collapses.
+- Three visually distinct levels: primary (14–15px medium) → secondary children
+  (13–14px lighter, indented 16–24px, shown only under the active parent) →
+  utility (settings/help/account) **pinned at the bottom**, smaller and grayed,
+  separated by whitespace. Equal visual weight on every item is the #1 cited
+  sidebar mistake.
+- **Labels always visible when expanded.** NN/g: icon-only nav as the default
+  state raises cognitive load — "a word is worth a thousand pictures." Icon-only
+  is legal ONLY in the collapsed rail, and then every item gets a hover tooltip.
+
+**States** (the quality lives here)
+- Active: `--brand-tint` fill + `--brand` text/icon — the sliding active pill
+  (§2.5.6) is the premium version. Optional: filled icon variant on active,
+  outline elsewhere.
+- Hover: `--surface-alt` fill. Focus-visible: the standard 2px brand ring —
+  nav is the most keyboard-traversed element in the app.
+
+**Behavior**
+- Collapse animates width `--dur-base` `--ease-out`; **icons stay fixed, labels
+  fade** (already in the motion budget) — labels sliding or icons jumping during
+  collapse is the jank tell.
+- **Persist collapse preference in `localStorage`** — resetting on every load is
+  a repeatedly-cited failure.
+- Never behind a hamburger on desktop; drawer overlay below `md` (matches §2.4.5).
+
+### 2.8 Filter bar — scope, apply/reset, and honest chips
+
+The filter bar answers "what am I looking at." In a clinical dashboard this is
+a trust surface, not a convenience: an unnoticed stale filter silently
+misrepresents the data.
+
+**Placement & scope**
+- **Top bar, above the content** — right for few, high-level, frequently-toggled
+  criteria (cohort, response category, active status, date range). Sidebar filter
+  panels are for faceted search with dozens of values, not this.
+- **A top filter bar must affect EVERYTHING below it.** A filter that applies to
+  only one chart lives on that chart's card, never in the page bar — mixed scopes
+  are the biggest source of filter confusion.
+- Sticky at top on scroll, next to the sticky table header (§2.5.1).
+
+**Apply/reset**
+- **Instant apply** when filtering is local/fast (<~300ms) — best feel, no button.
+  **Batch apply** (explicit button) only if queries are slow or users set several
+  filters before looking; the button says **"Apply"** — never "Close"/"Done" —
+  and shows a staged-changes signal (enabled state or count).
+- **"Reset" returns to defaults in ONE click and is always visible** whenever any
+  filter is non-default. Users explore more freely when the escape hatch is obvious.
+
+**Active-filter visibility** (the part most dashboards get wrong)
+- Every active filter renders as a **chip with its own ×** in a row visible
+  without opening any dropdown — the user must see *why the numbers look like
+  this* at a glance. Chips: `--brand-tint` bg, `--brand` text, `--radius-sm`.
+- **"Clear all"** appears at 2+ chips.
+- **Result count next to the chips** — "Showing 34 of 128 patients" — confirms
+  the filter acted AND keeps the denominator honest (the denominators-everywhere
+  rule applied to filtering).
+- **Empty-result state offers recovery inline**: "No patients match — clear
+  filters?" with the action right there, never just a blank table.
+
+**Styling** — same card language as everything else: white surface, hairline
+bottom border, 44px controls at `--radius-md`.
+
 ## Part 3 — The merge: one sentence each
 
 - **Clinical** gives the *what*: strict color semantics, denominators, freshness, overview→drill, plots-as-siblings, accessibility as table stakes.

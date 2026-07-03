@@ -37,7 +37,8 @@ src/
 │   │   ├── SwimmerPlot.jsx
 │   │   └── ChartTooltip.jsx  # shared token-styled tooltip
 │   └── layout/
-│       ├── Sidebar.jsx
+│       ├── Sidebar.jsx       # 240–260px / 56–72px rail; spec in principles §2.7
+│       ├── FilterBar.jsx     # top-scope filters + active chips + result count; spec in principles §2.8
 │       └── PageHeader.jsx    # title + "data as of" stamp lives here
 └── pages/
     └── DashboardPage.jsx     # composes hooks + ui + charts; owns layout only
