@@ -4,7 +4,7 @@
 
 ## Why
 
-This repo holds no application code. It is the written design work for a dashboard for Hummingbird Bioscience: a colour and component system, the principles behind it, and rounds of review feedback with the follow-up specs. The documents are written so a developer or a coding agent can build the UI from them.
+This repo holds no application code. It is the written design work for a clinical-trial dashboard: a colour and component system, the principles behind it, and rounds of review feedback with the follow-up specs. The documents are written so a developer or a coding agent can build the UI from them.
 
 ## Contents
 
